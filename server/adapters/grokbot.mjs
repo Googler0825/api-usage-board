@@ -6,6 +6,7 @@
 //   未公开接口，字段全按可选解析；驼峰/下划线两种写法都读。
 // 映射（参照 Pulse GrokBotUsageService 的结论）：
 //   - usagePercent 是「已用」0..100；缺失 ≠ 0（显式存在语义）。
+//     显示对齐官方客户端：>0 且 <1 显示 1%，否则四舍五入整数；原值写进副标。
 //   - 套餐「不含」时接口也回 0% + 升级文案，直接画会得到一条假的空条。
 //     必须 !usesPooledEnterpriseAllowance && !includedLimitZero && hasNonZeroIncludedLimit 才出窗口。
 //   - 回包常不带 nextResetTimestampUtc：有就用，没有 resetInSec=null；
@@ -42,17 +43,23 @@ export function windowFromReply(j, now = Date.now()) {
   const used = Number(pct);
   if (pct == null || !Number.isFinite(used)) throw new Unreadable('grok bot reply has no usagePercent');
 
+  // 显示口径对齐官方客户端（Grok Bot.app 的百分比格式化）：已用>0 且不足 1% 显示 1%，否则四舍五入到整数。
+  // 原值（常是 0.0x%）放进副标，避免「用了却显示 0%」。
+  const clamped = Math.min(100, Math.max(0, used));
+  const shown = clamped > 0 && clamped < 1 ? 1 : Math.round(clamped);
+  const exact = clamped > 0 && clamped < 1 ? `实际 ${Number(clamped.toPrecision(2))}%` : null;
+
   const reset = parseTs(pick(j, 'nextResetTimestampUtc'));
   const start = parseTs(pick(j, 'currentPeriodStart'));
   return {
     windows: [{
       label: '周额度', windowSec: WEEK_SEC,
-      usedPct: Math.round(Math.min(100, Math.max(0, used)) * 10) / 10,
+      usedPct: shown,
       timePct: start && reset && reset > start ? Math.min(100, Math.round(((now - start) / (reset - start)) * 100)) : null,
       resetInSec: reset ? Math.max(0, Math.round((reset - now) / 1000)) : null,
     }],
     source: 'direct',
-    note: pick(j, 'grokPlanLabel')?.trim() || undefined,
+    note: [pick(j, 'grokPlanLabel')?.trim(), exact].filter(Boolean).join(' · ') || undefined,
   };
 }
 
