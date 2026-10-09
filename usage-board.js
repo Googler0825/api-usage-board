@@ -820,7 +820,7 @@ function renderHbars(rootSel, rows, colorOf, base = null) {
     head.appendChild(nameEl);
     const val = el('span', 'hbar-val');
     if (r.noData) {
-      val.appendChild(document.createTextNode('无 token 数据'));
+      val.appendChild(document.createTextNode('仅配额 · 见 Dashboard'));
       wrap.title = '该渠道只有配额，本地没有可统计的 token 日志';
     } else {
       val.appendChild(document.createTextNode(fmtTokens(r.tokens)));
@@ -1280,7 +1280,7 @@ async function drawShareCard(panels = getSharePanels()) {
       ctx.fillStyle = P.label; ctx.font = `500 13px ${FF}`; ctx.textAlign = 'left';
       ctx.fillText(r.name, x, ry + 12, w - 150);
       ctx.fillStyle = P.dim; ctx.font = `400 12px ${FF}`; ctx.textAlign = 'right';
-      ctx.fillText(r.noData ? '无 token 数据' : `${fmtTokens(r.tokens)} · ${(r.tokens / total * 100).toFixed(1)}%`, x + w, ry + 12);
+      ctx.fillText(r.noData ? '仅配额 · 见 Dashboard' : `${fmtTokens(r.tokens)} · ${(r.tokens / total * 100).toFixed(1)}%`, x + w, ry + 12);
       ctx.textAlign = 'left';
       ctx.fillStyle = P.hmTrack; rr(x, ry + 18, w, 6, 3); ctx.fill();
       ctx.fillStyle = r.color; rr(x, ry + 18, Math.max(2, (r.tokens / max) * w), 6, 3); ctx.fill();
