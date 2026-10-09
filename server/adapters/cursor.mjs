@@ -16,7 +16,7 @@ import { staleGate } from '../ttl.mjs';
 const VSCDB = path.join(os.homedir(), 'Library', 'Application Support', 'Cursor', 'User', 'globalStorage', 'state.vscdb');
 const USAGE_URL = 'https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage';
 
-async function readCursorAuth() {
+export async function readCursorAuth() {
   const tmp = path.join(os.tmpdir(), `aub-cursor-${crypto.randomBytes(4).toString('hex')}`);
   fs.mkdirSync(tmp, { recursive: true });
   try {

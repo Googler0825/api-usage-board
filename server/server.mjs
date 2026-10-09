@@ -14,6 +14,7 @@ import { createDeepseekAdapter } from './adapters/deepseek.mjs';
 import { createOpenrouterAdapter } from './adapters/openrouter.mjs';
 import { createGrokAdapter } from './adapters/grok.mjs';
 import { createCursorAdapter } from './adapters/cursor.mjs';
+import { createGrokBotAdapter } from './adapters/grokbot.mjs';
 import { createAntigravityAdapter } from './adapters/antigravity.mjs';
 import { createGeminiAdapter } from './adapters/gemini.mjs';
 
@@ -28,6 +29,7 @@ const adapters = [
   createOpenrouterAdapter(),
   createGrokAdapter(),
   createCursorAdapter(),
+  createGrokBotAdapter(),
   createAntigravityAdapter(),
   createGeminiAdapter(),
 ];
@@ -134,8 +136,12 @@ async function apiTokenSeries({ days, endOffset, metric }) {
     return s + (ch.total / 1e6) * (PRICE_PER_M[ch.id] || 0);
   }, 0));
 
+  // 无本地 token 序列的渠道（Cursor / Grok Bot）：不进趋势/费用，但 Coding Agent 面板要占位列出
+  const noTokenChannels = adapters.filter((a) => a.tokenData === false)
+    .map((a) => ({ id: a.id, name: a.name, color: a.color }));
+
   return {
-    dates, channels, models,
+    dates, channels, models, noTokenChannels,
     today: {
       date: realToday,
       total: breakdown.input + breakdown.output + breakdown.cacheRead + breakdown.cacheWrite,

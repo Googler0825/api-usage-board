@@ -1,7 +1,7 @@
 # api-usage-board — AI API 用量监控 Dashboard
 
-**v2.2** · 深/浅双主题监控台，一屏看完 **9 个 AI 编程工具/API 渠道**的配额、token 用量和费用：
-Claude Code / Codex / Kimi Code / DeepSeek / OpenRouter / Grok / Cursor / Antigravity / Gemini API。
+**v2.2** · 深/浅双主题监控台，一屏看完 **10 个 AI 编程工具/API 渠道**的配额、token 用量和费用：
+Claude Code / Codex / Kimi Code / DeepSeek / OpenRouter / Grok Build / Grok Bot / Cursor / Antigravity / Gemini API。
 
 纯前端 vanilla HTML/CSS/JS（ES modules），无构建步骤、无外部依赖、无 CDN；本地 server
 只用 Node 内置模块，零 npm 依赖。数据全部读取你本机已有的 CLI 凭证/日志，**不上传任何数据**。
@@ -33,7 +33,7 @@ cd api-usage-board
 
 **3. 看懂第一屏**：**你电脑上装了哪个 AI 工具，对应渠道就自动亮起**——这些工具登录后都会
 在本地留一份凭证文件，这个 dashboard 只是读它们，不需要你额外配置。没装的渠道显示灰色
-「未配置」/「未运行」，不影响其他渠道，**不需要凑齐 9 个才能用**。
+「未配置」/「未运行」，不影响其他渠道，**不需要凑齐 10 个才能用**。
 
 **4.（可选）配置 OpenRouter**：唯一一个需要手动配置的渠道（不是本地 CLI 工具）。
 Dashboard 页面 OpenRouter 卡片未配置时会显示「未配置 key → 如何获取 key」，点一下就有
@@ -78,8 +78,9 @@ nohup "/path/to/api-usage-board/serve.command" >/dev/null 2>&1 &
 
 - Claude/Codex 的配额直连走的是未公开接口（跟随官方客户端行为），可能随时漂移；都有降级链（直连失败→旧方案→offline），不会直接报错
 - Antigravity **配额**仍靠机会主义采集，凭证位置未定位，只有 agy 运行时才能查到，不跑则显示"未运行"；**Token 用量**已从本地会话库解析，跟 agy 是否运行无关（社区 PR #1 贡献）
-- Grok 的 token 序列是上下文快照近似值，不是精确计量
-- Cursor 没有本地干净日志，不进 Token 用量 tab
+- Grok Build（Grok CLI / SuperGrok）的 token 序列是上下文快照近似值，不是精确计量
+- Cursor 没有本地干净日志，Grok Bot 同样只有配额：二者只在 Token 用量 tab 的 Coding Agent 面板里占位（标「无 token 数据」），不进趋势/费用
+- Grok Bot 是 xAI 经 Cursor 售卖、计在 Cursor 账号上的额度，凭证读 Cursor 登录（`state.vscdb`），与 Grok Build 的 `~/.grok` 不是一份；走未公开接口 `GetSandUsageStatus`，可能随时变化
 - Gemini API 没有官方用量查询接口，只能读客户端留在本地的会话记录：目前支持 **Gemini CLI**（API key 模式）和 **OpenCode**（Google provider）。自己写脚本直接调 API 的用量采集不到；费用按官方刊例价估算。两个数据源的格式依据官方源码实现，尚未经真实用户数据验证，欢迎反馈
 
 ## 安全

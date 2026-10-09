@@ -1,4 +1,4 @@
-// adapters/grok.mjs — Grok 渠道
+// adapters/grok.mjs — Grok Build 渠道（Grok CLI / SuperGrok 额度；id 仍为 grok，不是 Cursor 里的 Grok Bot）
 // 配额直连：GET https://cli-chat-proxy.grok.com/v1/billing?format=credits
 //   （Bearer = ~/.grok/auth.json 的 entry.key JWT；只读不刷新——xAI 轮换 refresh token，
 //   多客户端刷新会互顶）。creditUsagePercent 为 0 时字段省略，防御性解析。
@@ -216,7 +216,7 @@ export function createGrokAdapter() {
   let lastOk = 0, lastLatency = 0;
 
   return {
-    id: 'grok', name: 'Grok', color: '#f472b6',
+    id: 'grok', name: 'Grok Build', color: '#f472b6',
     warm() { gate({}).catch(() => {}); rowsCache.warm(); },
     async quota() {
       // 从未跑过 Grok：目录都不存在 → 不是故障，不进告警横幅
@@ -250,7 +250,7 @@ function offlineNote(e) {
   const msg = e?.message || '';
   if (msg === 'no grok credentials') return '未登录 grok CLI（无有效凭证），客户端登录后自动采集';
   const m = msg.match(/HTTP (\d+)/);
-  if (m && (m[1] === '401' || m[1] === '403')) return '凭证已过期，在 grok 客户端重新登录后自动恢复';
+  if (m && (m[1] === '401' || m[1] === '403')) return '凭证已过期，在 Grok Build 客户端重新登录后自动恢复';
   if (m) return `billing 接口返回 HTTP ${m[1]}，重试中`;
   return 'billing 接口不可达（网络/超时），重试中';
 }

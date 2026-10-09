@@ -126,6 +126,8 @@ const CH_ICONS = {
   deepseek: { c: '#4d6bfe', svg: '<path fill="currentColor" d="M3.2 14.2c0-1.4.4-2.7 1.2-3.8C5.6 8.4 8 6.5 11.4 6.5c2.9 0 5.3 1.3 6.6 3.4l2.6-2c.1 3-.8 5-2.4 6.3-1.6 1.8-4 2.9-6.9 2.9-4 0-8.1-1.3-8.1-2.9z"/><path fill="currentColor" d="M9.2 5.2c.2-1.2 1-2 2-2.3-.1 1.1-.6 1.9-1.4 2.4l-.6-.1z"/><path fill="currentColor" d="M12.2 4.6c.5-1 1.4-1.6 2.5-1.7-.3 1-1 1.8-2 2.1l-.5-.4z"/>' },
   openrouter: { c: '#8b93f5', svg: '<g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></g>' },
   grok: { c: null, svg: '<path fill="currentColor" d="M4.5 5h3.4l4.1 5.6L16.1 5h3.4l-5.7 7.6 6.2 6.9h-3.4l-4.6-6.2-4.6 6.2H4l6.2-8.3z"/>' },
+  // Grok Bot：用 Grok 官方螺旋标（xAI 品牌），与 Grok CLI 渠道的 X 字形区分；黑白标随主题墨色
+  grokbot: { c: null, svg: '<path fill="currentColor" fill-rule="evenodd" transform="translate(2 2) scale(.833)" d="M 9.27 15.29 l 7.978 -5.897 c .391 -.29 .95 -.177 1.137 .272 .98 2.369 .542 5.215 -1.41 7.169 -1.951 1.954 -4.667 2.382 -7.149 1.406 l -2.711 1.257 c 3.889 2.661 8.611 2.003 11.562 -.953 2.341 -2.344 3.066 -5.539 2.388 -8.42 l .006 .007 c -.983 -4.232 .242 -5.924 2.75 -9.383 .06 -.082 .12 -.164 .179 -.248 l -3.301 3.305 v -.01 L 9.267 15.292 M 7.623 16.723 c -2.792 -2.67 -2.31 -6.801 .071 -9.184 1.761 -1.763 4.647 -2.483 7.166 -1.425 l 2.705 -1.25 a 7.808 7.808 0 0 0 -1.829 -1 A 8.975 8.975 0 0 0 5.984 5.83 c -2.533 2.536 -3.33 6.436 -1.962 9.764 1.022 2.487 -.653 4.246 -2.34 6.022 -.599 .63 -1.199 1.259 -1.682 1.925 l 7.62 -6.815"/>' },
   cursor: { c: null, svg: '<path fill="currentColor" d="M5.5 3.2 19.5 11l-6.5 1.4 2.6 6.4-2.7 1.1-2.6-6.4-4.8 3.3z"/>' },
   antigravity: { c: '#8ab4f8', svg: '<path fill="currentColor" d="M12 2.8l2.3 6.9 6.9 2.3-6.9 2.3L12 21.2l-2.3-6.9-6.9-2.3 6.9-2.3z"/>' },
   // Gemini 火花：凹边四芒星（Q 控制点拉向中心形成内凹边），与 antigravity 的直边星区分
@@ -817,8 +819,13 @@ function renderHbars(rootSel, rows, colorOf, base = null) {
     if (r.tag) nameEl.appendChild(el('span', 'hbar-tag', r.tag)); // 如「已合并 2 个目录」
     head.appendChild(nameEl);
     const val = el('span', 'hbar-val');
-    val.appendChild(document.createTextNode(fmtTokens(r.tokens)));
-    val.appendChild(el('span', 'pct', `${(r.tokens / total * 100).toFixed(1)}%`));
+    if (r.noData) {
+      val.appendChild(document.createTextNode('无 token 数据'));
+      wrap.title = '该渠道只有配额，本地没有可统计的 token 日志';
+    } else {
+      val.appendChild(document.createTextNode(fmtTokens(r.tokens)));
+      val.appendChild(el('span', 'pct', `${(r.tokens / total * 100).toFixed(1)}%`));
+    }
     head.appendChild(val);
     wrap.appendChild(head);
     const track = el('div', 'hbar-track');
@@ -1074,8 +1081,10 @@ async function drawShareCard(panels = getSharePanels()) {
     cost: panels.cost && !!state.costSummary?.channels?.length,
   };
   const ROW_H = 30; // 横条/费用行统一行高
+  const agentCount = eff.agentmodel ? tk.channels.length + (tk.noTokenChannels?.length || 0) : 0;
+  const modelTop = Math.max(6, agentCount - 1);
   const duoRows = eff.agentmodel
-    ? Math.max(tk.channels.length, Math.min(6, tk.models.length) + (tk.models.length > 6 ? 1 : 0))
+    ? Math.max(agentCount, Math.min(modelTop, tk.models.length) + (tk.models.length > modelTop ? 1 : 0))
     : 0;
   const projRows = eff.project
     ? Math.min(6, state.byProject.length) + (state.byProject.length > 6 ? 1 : 0)
@@ -1271,7 +1280,7 @@ async function drawShareCard(panels = getSharePanels()) {
       ctx.fillStyle = P.label; ctx.font = `500 13px ${FF}`; ctx.textAlign = 'left';
       ctx.fillText(r.name, x, ry + 12, w - 150);
       ctx.fillStyle = P.dim; ctx.font = `400 12px ${FF}`; ctx.textAlign = 'right';
-      ctx.fillText(`${fmtTokens(r.tokens)} · ${(r.tokens / total * 100).toFixed(1)}%`, x + w, ry + 12);
+      ctx.fillText(r.noData ? '无 token 数据' : `${fmtTokens(r.tokens)} · ${(r.tokens / total * 100).toFixed(1)}%`, x + w, ry + 12);
       ctx.textAlign = 'left';
       ctx.fillStyle = P.hmTrack; rr(x, ry + 18, w, 6, 3); ctx.fill();
       ctx.fillStyle = r.color; rr(x, ry + 18, Math.max(2, (r.tokens / max) * w), 6, 3); ctx.fill();
@@ -1338,11 +1347,14 @@ async function drawShareCard(panels = getSharePanels()) {
     ctx.fillText('CODING AGENT', PAD, cy + 10);
     ctx.fillText('模型', PAD + colW + colGap, cy + 10);
     const agentColor = (id) => (tk.channels.find((c) => c.id === id) || {}).color || P.dim;
-    drawHbars(tk.channels.map((c) => ({ name: c.name, tokens: c.total, color: c.color })), PAD, cy + 20, colW);
-    const mrows = tk.models.slice(0, 6)
+    drawHbars([
+      ...tk.channels.map((c) => ({ name: c.name, tokens: c.total, color: c.color })),
+      ...(tk.noTokenChannels || []).map((c) => ({ name: c.name, tokens: 0, color: c.color, noData: true })),
+    ], PAD, cy + 20, colW);
+    const mrows = tk.models.slice(0, modelTop)
       .map((m) => ({ name: m.name, tokens: m.tokens, color: agentColor(m.channel) }));
-    if (tk.models.length > 6) {
-      const rest = tk.models.slice(6);
+    if (tk.models.length > modelTop) {
+      const rest = tk.models.slice(modelTop);
       mrows.push({ name: `其他 ${rest.length} 项`, tokens: rest.reduce((s, m) => s + m.tokens, 0), color: P.dim });
     }
     drawHbars(mrows, PAD + colW + colGap, cy + 20, colW);
