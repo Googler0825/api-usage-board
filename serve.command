@@ -21,7 +21,9 @@ if [ -z "$NODE" ]; then
 fi
 echo "使用 node: $NODE ($($NODE -v))"
 
-if ! lsof -i :$PORT >/dev/null 2>&1 && ! /usr/sbin/lsof -i :$PORT >/dev/null 2>&1; then
+# 只认「正在监听」：服务被杀后，打开着看板的浏览器标签页还握着半关闭连接（CLOSE_WAIT），
+# `lsof -i :端口` 会把它们也列出来，旧写法据此误判成「服务在跑」，只开浏览器、不启动服务。
+if ! lsof -nP -iTCP:$PORT -sTCP:LISTEN >/dev/null 2>&1 && ! /usr/sbin/lsof -nP -iTCP:$PORT -sTCP:LISTEN >/dev/null 2>&1; then
   (
     # 首开时 server 首轮扫描大日志要十几秒，等 /api/health 就绪再开浏览器（上限 60s）
     for i in $(seq 1 60); do
