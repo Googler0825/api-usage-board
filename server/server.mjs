@@ -66,7 +66,7 @@ async function apiStatus() {
 }
 
 // 估值单价（$/M tokens，粗略均值；订阅渠道仅作参考，非订阅账单）
-const PRICE_PER_M = { claude: 4.5, codex: 2.8, kimi: 0.9, deepseek: 0.4, grok: 1.5, antigravity: 0.5, gemini: 1.2 };
+const PRICE_PER_M = { claude: 4.5, codex: 2.8, kimi: 0.9, deepseek: 0.4, grok: 1.5, grokbot: 1.5, antigravity: 0.5, gemini: 1.2 };
 
 function localDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -136,7 +136,7 @@ async function apiTokenSeries({ days, endOffset, metric }) {
     return s + (ch.total / 1e6) * (PRICE_PER_M[ch.id] || 0);
   }, 0));
 
-  // 无本地 token 序列的渠道（Cursor / Grok Bot）：不进趋势/费用，但 Coding Agent 面板要占位列出
+  // 无本地 token 序列的渠道（Cursor）：不进趋势/费用，但 Coding Agent 面板要占位列出
   const noTokenChannels = adapters.filter((a) => a.tokenData === false)
     .map((a) => ({ id: a.id, name: a.name, color: a.color }));
 
@@ -171,7 +171,7 @@ function loadConfig() {
 
 // 套餐选择器写回：只改 subscriptions[channel]，其余字段（modelPrices/projectAliases/...）原样保留。
 // 校验从紧：未知 channel / 非法数值一律拒绝，不静默吞错误，避免把 config.json 写坏。
-const KNOWN_CHANNEL_IDS = new Set(['claude', 'codex', 'kimi', 'deepseek', 'openrouter', 'grok', 'cursor', 'antigravity']);
+const KNOWN_CHANNEL_IDS = new Set(['claude', 'codex', 'kimi', 'deepseek', 'openrouter', 'grok', 'cursor', 'antigravity', 'grokbot', 'gemini']);
 function saveSubscription(channelId, sub) {
   if (!KNOWN_CHANNEL_IDS.has(channelId)) throw new Error('unknown channel');
   const plan = String(sub.plan || '').slice(0, 40);
@@ -292,7 +292,7 @@ async function apiCostSummary({ days }) {
         .sort((x, y) => y.cost - x.cost).slice(0, 5),
       subscription: sub ? { ...sub, monthlyUSD: Math.round(monthlyUSD * 100) / 100 } : null,
       roi: sub && monthlyUSD > 0 ? Math.round((equiv / periodCost) * 10) / 10 : null,
-      note: a.id === 'grok' ? '近似口径（上下文快照）' : a.id === 'deepseek' ? '按量计费 · 实付以余额扣减（CNY）为准' : a.id === 'gemini' ? '按量计费 · 刊例价估算' : undefined,
+      note: a.id === 'grok' ? '近似口径（上下文快照）' : a.id === 'grokbot' ? '近似口径（会话文本估算）' : a.id === 'deepseek' ? '按量计费 · 实付以余额扣减（CNY）为准' : a.id === 'gemini' ? '按量计费 · 刊例价估算' : undefined,
       priced: allPriced,
     };
   });

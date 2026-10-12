@@ -79,8 +79,8 @@ nohup "/path/to/api-usage-board/serve.command" >/dev/null 2>&1 &
 - Claude/Codex 的配额直连走的是未公开接口（跟随官方客户端行为），可能随时漂移；都有降级链（直连失败→旧方案→offline），不会直接报错
 - Antigravity **配额**仍靠机会主义采集，凭证位置未定位，只有 agy 运行时才能查到，不跑则显示"未运行"；**Token 用量**已从本地会话库解析，跟 agy 是否运行无关（社区 PR #1 贡献）
 - Grok Build（Grok CLI / SuperGrok）的 token 序列是上下文快照近似值，不是精确计量
-- Cursor 没有本地干净日志，Grok Bot 同样只有配额：二者只在 Token 用量 tab 的 Coding Agent 面板里占位（标「仅配额 · 见 Dashboard」），不进趋势/费用
-- Grok Bot 是 xAI 经 Cursor 售卖、计在 Cursor 账号上的额度，凭证读 Cursor 登录（`state.vscdb`），与 Grok Build 的 `~/.grok` 不是一份；走未公开接口 `GetSandUsageStatus`，可能随时变化
+- Cursor 没有本地干净日志：在 Token 用量 tab 的 Coding Agent 面板里占位（标「仅配额 · 见 Dashboard」），不进趋势/费用
+- Grok Bot（Sand 架构）：**配额**支持优先通过 Cursor 凭证接口请求，并自动回退读取桌面客户端本地切片（`weekly-usage.cache`）；**Token 用量**已支持通过本地会话切片（`transcript.replicas`）按消息文本与时间戳进行近似估算（字符级折算）
 - Gemini API 没有官方用量查询接口，只能读客户端留在本地的会话记录：目前支持 **Gemini CLI**（API key 模式）和 **OpenCode**（Google provider）。自己写脚本直接调 API 的用量采集不到；费用按官方刊例价估算。两个数据源的格式依据官方源码实现，尚未经真实用户数据验证，欢迎反馈
 
 ## 安全
