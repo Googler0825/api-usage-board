@@ -17,6 +17,7 @@ const VSCDB = path.join(os.homedir(), 'Library', 'Application Support', 'Cursor'
 const USAGE_URL = 'https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage';
 
 export async function readCursorAuth() {
+  if (!fs.existsSync(VSCDB)) return {};
   const tmp = path.join(os.tmpdir(), `aub-cursor-${crypto.randomBytes(4).toString('hex')}`);
   fs.mkdirSync(tmp, { recursive: true });
   try {

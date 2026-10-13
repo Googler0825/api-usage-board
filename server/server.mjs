@@ -91,7 +91,11 @@ async function apiTokenSeries({ days, endOffset, metric }) {
     const byDate = new Map();
     for (const r of rows) byDate.set(r.date, (byDate.get(r.date) || 0) + pickVal(r));
     const daily = dates.map((d) => byDate.get(d) || 0);
-    return { id: a.id, name: a.name, color: a.color, daily, total: daily.reduce((s, v) => s + v, 0) };
+    return {
+      id: a.id, name: a.name, color: a.color, daily,
+      total: daily.reduce((s, v) => s + v, 0),
+      tag: a.tokenTag || undefined,
+    };
   });
 
   // 模型分布（当前窗口内）
@@ -136,7 +140,7 @@ async function apiTokenSeries({ days, endOffset, metric }) {
     return s + (ch.total / 1e6) * (PRICE_PER_M[ch.id] || 0);
   }, 0));
 
-  // 无本地 token 序列的渠道（Cursor / Grok Bot）：不进趋势/费用，但 Coding Agent 面板要占位列出
+  // 无本地 token 序列的渠道（Cursor）：不进趋势/费用，但 Coding Agent 面板要占位列出
   const noTokenChannels = adapters.filter((a) => a.tokenData === false)
     .map((a) => ({ id: a.id, name: a.name, color: a.color }));
 
@@ -171,7 +175,7 @@ function loadConfig() {
 
 // 套餐选择器写回：只改 subscriptions[channel]，其余字段（modelPrices/projectAliases/...）原样保留。
 // 校验从紧：未知 channel / 非法数值一律拒绝，不静默吞错误，避免把 config.json 写坏。
-const KNOWN_CHANNEL_IDS = new Set(['claude', 'codex', 'kimi', 'deepseek', 'openrouter', 'grok', 'cursor', 'antigravity']);
+const KNOWN_CHANNEL_IDS = new Set(['claude', 'codex', 'kimi', 'deepseek', 'openrouter', 'grok', 'cursor', 'antigravity', 'grokbot']);
 function saveSubscription(channelId, sub) {
   if (!KNOWN_CHANNEL_IDS.has(channelId)) throw new Error('unknown channel');
   const plan = String(sub.plan || '').slice(0, 40);
@@ -257,7 +261,7 @@ async function apiCostSummary({ days }) {
   const subs = cfg.subscriptions || {};
   const cnyUsdRate = cfg.cnyUsdRate || 7.2;
   const defPrice = prices._default || { input: 2, output: 8, cacheRead: 0.2, cacheWrite: 2 };
-  const seriesAdapters = adapters.filter((a) => a.tokenData !== false);
+  const seriesAdapters = adapters.filter((a) => a.tokenData !== false && a.costData !== false);
   const rowsByChannel = await Promise.all(seriesAdapters.map((a) => guard(() => a.usageRows(), [], 60_000)));
   const dates = new Set();
   const today = new Date();

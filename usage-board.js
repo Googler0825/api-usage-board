@@ -882,7 +882,7 @@ function renderBarsWithDrawer(rootSel, rows, drawerOpen, onToggle, TOP = 6) {
 function renderDuoPanels() {
   const d = state.token;
   $('#agent-bars').innerHTML = '';
-  renderHbars('#agent-bars', d.channels.map((c) => ({ name: c.name, tokens: c.total, id: c.id, iconId: c.id })),
+  renderHbars('#agent-bars', d.channels.map((c) => ({ name: c.name, tokens: c.total, id: c.id, iconId: c.id, tag: c.tag })),
     (r) => d.channels.find((c) => c.id === r.id).color);
 
   // 模型面板
