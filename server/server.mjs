@@ -66,7 +66,7 @@ async function apiStatus() {
 }
 
 // 估值单价（$/M tokens，粗略均值；订阅渠道仅作参考，非订阅账单）
-const PRICE_PER_M = { claude: 4.5, codex: 2.8, kimi: 0.9, deepseek: 0.4, grok: 1.5, grokbot: 1.5, antigravity: 0.5, gemini: 1.2 };
+const PRICE_PER_M = { claude: 4.5, codex: 2.8, kimi: 0.9, deepseek: 0.4, grok: 1.5, antigravity: 0.5, gemini: 1.2 };
 
 function localDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -91,7 +91,11 @@ async function apiTokenSeries({ days, endOffset, metric }) {
     const byDate = new Map();
     for (const r of rows) byDate.set(r.date, (byDate.get(r.date) || 0) + pickVal(r));
     const daily = dates.map((d) => byDate.get(d) || 0);
-    return { id: a.id, name: a.name, color: a.color, daily, total: daily.reduce((s, v) => s + v, 0) };
+    return {
+      id: a.id, name: a.name, color: a.color, daily,
+      total: daily.reduce((s, v) => s + v, 0),
+      tag: a.tokenTag || undefined,
+    };
   });
 
   // 模型分布（当前窗口内）
@@ -171,7 +175,7 @@ function loadConfig() {
 
 // 套餐选择器写回：只改 subscriptions[channel]，其余字段（modelPrices/projectAliases/...）原样保留。
 // 校验从紧：未知 channel / 非法数值一律拒绝，不静默吞错误，避免把 config.json 写坏。
-const KNOWN_CHANNEL_IDS = new Set(['claude', 'codex', 'kimi', 'deepseek', 'openrouter', 'grok', 'cursor', 'antigravity', 'grokbot', 'gemini']);
+const KNOWN_CHANNEL_IDS = new Set(['claude', 'codex', 'kimi', 'deepseek', 'openrouter', 'grok', 'cursor', 'antigravity', 'grokbot']);
 function saveSubscription(channelId, sub) {
   if (!KNOWN_CHANNEL_IDS.has(channelId)) throw new Error('unknown channel');
   const plan = String(sub.plan || '').slice(0, 40);
@@ -257,7 +261,7 @@ async function apiCostSummary({ days }) {
   const subs = cfg.subscriptions || {};
   const cnyUsdRate = cfg.cnyUsdRate || 7.2;
   const defPrice = prices._default || { input: 2, output: 8, cacheRead: 0.2, cacheWrite: 2 };
-  const seriesAdapters = adapters.filter((a) => a.tokenData !== false);
+  const seriesAdapters = adapters.filter((a) => a.tokenData !== false && a.costData !== false);
   const rowsByChannel = await Promise.all(seriesAdapters.map((a) => guard(() => a.usageRows(), [], 60_000)));
   const dates = new Set();
   const today = new Date();
@@ -292,7 +296,7 @@ async function apiCostSummary({ days }) {
         .sort((x, y) => y.cost - x.cost).slice(0, 5),
       subscription: sub ? { ...sub, monthlyUSD: Math.round(monthlyUSD * 100) / 100 } : null,
       roi: sub && monthlyUSD > 0 ? Math.round((equiv / periodCost) * 10) / 10 : null,
-      note: a.id === 'grok' ? '近似口径（上下文快照）' : a.id === 'grokbot' ? '近似口径（会话文本估算）' : a.id === 'deepseek' ? '按量计费 · 实付以余额扣减（CNY）为准' : a.id === 'gemini' ? '按量计费 · 刊例价估算' : undefined,
+      note: a.id === 'grok' ? '近似口径（上下文快照）' : a.id === 'deepseek' ? '按量计费 · 实付以余额扣减（CNY）为准' : a.id === 'gemini' ? '按量计费 · 刊例价估算' : undefined,
       priced: allPriced,
     };
   });

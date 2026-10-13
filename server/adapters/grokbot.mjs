@@ -2,11 +2,14 @@
 // Grok Bot 是 xAI 的产品，基于 Anysphere 的 Sand 架构运行。
 // 配额（双源容错）：
 //   1. 优先通过 Cursor 凭证（state.vscdb → cursorAuth/accessToken）调用 api2.cursor.sh。
-//   2. 若无 Cursor 凭证或调用失败，自动回退读取桌面客户端本地持久化切片：
-//      ~/Library/Application Support/Grok Bot/sand-client-persistence/ 下的 weekly-usage.cache。
+//   2. 仅在网络错误、凭证缺失或 401/403 时回退读取桌面客户端本地切片（weekly-usage.cache，Base32 编码）；
+//      远端明确返回 NotIncluded（套餐不含）或 Unreadable 时直接抛出，不吞掉结论。
+//   3. 本地缓存带有 readAtMs 与 expiresAtMs，过期时返回 stale 态并提示离线。
 // Token 序列（会话文本估算）：
 //   扫描 sand-client-persistence/ 下的 transcript.replicas.* 会话切片。
-//   按时间戳 timestampMs 和消息内容进行字符级 Token 估算归约，增量缓存至 server/.cache/grokbot-scan.json。
+//   按 role 分类（user 为输入，assistant 为输出），基于 entry id 和 requestId 双重去重。
+//   真增量持久化累加至 server/.cache/grokbot-scan.json，防止滚动窗口截断导致旧日期用量缩水。
+//   在 Coding Agent 面板标明「会话文本估算（仅本地可见部分）」，暂不进费用估值与订阅回报。
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -66,8 +69,7 @@ export function windowFromReply(j, now = Date.now()) {
   const used = Number(pct);
   if (pct == null || !Number.isFinite(used)) throw new Unreadable('grok bot reply has no usagePercent');
 
-  // 显示口径对齐官方客户端（Grok Bot.app 的百分比格式化）：已用>0 且不足 1% 显示 1%，否则四舍五入到整数。
-  // 原值（如 0.0x% 或精确小数）放进副标，避免「用了却显示 0%」。
+  // 显示口径对齐官方客户端：已用>0 且不足 1% 显示 1%，否则四舍五入到整数。
   const clamped = Math.min(100, Math.max(0, used));
   const shown = clamped > 0 && clamped < 1 ? 1 : Math.round(clamped);
   const exact = clamped > 0 && clamped < 1 ? `实际 ${Number(clamped.toPrecision(2))}%` : (clamped % 1 !== 0 ? `实际 ${Math.round(clamped * 10) / 10}%` : null);
@@ -87,7 +89,7 @@ export function windowFromReply(j, now = Date.now()) {
 }
 
 // 本地客户端持久化缓存回退（无需 Cursor 凭证）
-function readLocalWeeklyUsage() {
+function readLocalWeeklyUsage(now = Date.now()) {
   if (!fs.existsSync(GROKBOT_DATA_DIR)) return null;
   let files = [];
   try {
@@ -100,11 +102,15 @@ function readLocalWeeklyUsage() {
       if (decoded.includes('weekly-usage.cache')) {
         const raw = fs.readFileSync(path.join(GROKBOT_DATA_DIR, f), 'utf8');
         const j = JSON.parse(raw);
-        const usage = j.value?.reading?.usage;
+        const val = j.value;
+        const usage = val?.reading?.usage;
         if (usage && usage.percentUsed != null) {
-          const now = Date.now();
           const reset = usage.nextResetMs;
           const resetInSec = reset && reset > now ? Math.max(0, Math.round((reset - now) / 1000)) : null;
+          const readAtMs = val?.reading?.readAtMs;
+          const expiresAtMs = val?.expiresAtMs;
+          const isExpired = expiresAtMs ? now > expiresAtMs : (readAtMs ? now - readAtMs > 24 * 3600000 : false);
+
           const res = windowFromReply({
             usesPooledEnterpriseAllowance: false,
             includedLimitZero: false,
@@ -113,9 +119,19 @@ function readLocalWeeklyUsage() {
             nextResetTimestampUtc: usage.nextResetMs,
             grokPlanLabel: usage.grokPlanLabel || 'SuperGrok',
             __source: 'local-cache',
-          });
+          }, now);
+
           if (res.windows?.[0] && resetInSec != null) {
             res.windows[0].timePct = Math.min(100, Math.max(0, Math.round((1 - resetInSec / WEEK_SEC) * 100)));
+          }
+
+          if (isExpired) {
+            const hours = readAtMs ? Math.max(1, Math.round((now - readAtMs) / 3600000)) : null;
+            return {
+              ...res,
+              isStale: true,
+              staleNote: [usage.grokPlanLabel || 'SuperGrok', hours ? `数据为 ${hours} 小时前 · 客户端离线` : '本地缓存已过期 · 客户端离线'].filter(Boolean).join(' · '),
+            };
           }
           return res;
         }
@@ -126,7 +142,9 @@ function readLocalWeeklyUsage() {
 }
 
 async function fetchUsage() {
+  let canFallback = false;
   let remoteErr = null;
+
   if (fs.existsSync(VSCDB)) {
     try {
       const auth = await readCursorAuth();
@@ -142,18 +160,36 @@ async function fetchUsage() {
           body: '{}',
           signal: AbortSignal.timeout(12_000),
         });
-        if (res.status === 401 || res.status === 403) throw new AuthExpired(`grok bot usage HTTP ${res.status}`);
-        if (!res.ok) throw new Error(`grok bot usage HTTP ${res.status}`);
-        return windowFromReply(await res.json());
+        if (res.status === 401 || res.status === 403) {
+          canFallback = true;
+          remoteErr = new AuthExpired(`grok bot usage HTTP ${res.status}`);
+        } else if (!res.ok) {
+          canFallback = true;
+          remoteErr = new Error(`grok bot usage HTTP ${res.status}`);
+        } else {
+          return windowFromReply(await res.json());
+        }
+      } else {
+        canFallback = true;
+        remoteErr = new AuthExpired('no cursor token');
       }
     } catch (e) {
+      if (e instanceof NotIncluded || e instanceof Unreadable) {
+        throw e; // 明确结论直接抛出，不被 catch 吞掉去读本地缓存
+      }
+      canFallback = true;
       remoteErr = e;
     }
+  } else {
+    canFallback = true;
+    remoteErr = new AuthExpired('no cursor credentials');
   }
 
-  // 远端不可用时回退读取 Grok Bot 本地客户端切片缓存
-  const local = readLocalWeeklyUsage();
-  if (local) return local;
+  // 仅在网络错误、凭证缺失或 401/403 时回退读取 Grok Bot 本地切片缓存
+  if (canFallback) {
+    const local = readLocalWeeklyUsage();
+    if (local) return local;
+  }
 
   if (remoteErr) throw remoteErr;
   throw new AuthExpired('no grokbot credentials');
@@ -171,25 +207,53 @@ function estimateTokens(text) {
   return Math.max(1, Math.round(cjk / 1.5 + ascii / 4));
 }
 
+function loadCache() {
+  try {
+    const c = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+    if (c.v === 2 && c.files && c.daily && c.seenIds) return c;
+  } catch {}
+  return { v: 2, files: {}, seenIds: {}, seenReqs: {}, daily: {} };
+}
+
+function saveCache(c) {
+  try {
+    fs.mkdirSync(path.dirname(CACHE_FILE), { recursive: true });
+    fs.writeFileSync(CACHE_FILE, JSON.stringify(c));
+  } catch {}
+}
+
+function buildRows(daily) {
+  const cutoffMs = Date.now() - SCAN_DAYS * 86400000;
+  const keepAfter = localDate(cutoffMs);
+  const rows = [];
+  for (const [date, val] of Object.entries(daily || {})) {
+    if (date < keepAfter) continue;
+    if (val.input === 0 && val.output === 0) continue;
+    rows.push({
+      date, model: 'grok-bot', cwd: null, input: val.input, output: val.output, cacheRead: 0, cacheWrite: 0,
+    });
+  }
+  rows.sort((a, b) => a.date.localeCompare(b.date));
+  return rows;
+}
+
 // Token 序列增量扫描：读取 sand-client-persistence/ 目录下所有会话 transcript replicas
 function scan() {
-  const cache = (() => {
-    try {
-      const c = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
-      if (c.v !== 1) throw new Error('rebuild cache');
-      return c;
-    } catch { return { v: 1, files: {}, rows: {} }; }
-  })();
-
-  if (!fs.existsSync(GROKBOT_DATA_DIR)) return Object.values(cache.rows);
+  const cache = loadCache();
+  if (!fs.existsSync(GROKBOT_DATA_DIR)) {
+    return buildRows(cache.daily);
+  }
 
   let blobFiles = [];
   try {
     blobFiles = fs.readdirSync(GROKBOT_DATA_DIR).filter((f) => f.endsWith('.blob'));
-  } catch { blobFiles = []; }
+  } catch {
+    return buildRows(cache.daily);
+  }
 
   const cutoffMs = Date.now() - SCAN_DAYS * 86400000;
   const keepAfter = localDate(cutoffMs);
+  let changed = false;
 
   for (const f of blobFiles) {
     const decoded = base32Decode(f.slice(0, -5));
@@ -205,62 +269,50 @@ function scan() {
       continue; // 未变动直接复用
     }
 
-    // 解析会话文件
     try {
       const raw = fs.readFileSync(fullPath, 'utf8');
       const j = JSON.parse(raw);
       const entries = j.value?.entries || [];
-      const dailyMap = {};
 
       for (const e of entries) {
-        const ms = e.timestampMs;
-        if (!ms) continue;
-        const text = e.message?.content || e.content || e.richText || '';
-        if (!text) continue;
+        if (!e.timestampMs || !e.id) continue;
+        if (cache.seenIds[e.id]) continue;
+        cache.seenIds[e.id] = 1;
+        changed = true;
 
-        const date = localDate(ms);
+        const date = localDate(e.timestampMs);
         if (date < keepAfter) continue;
 
-        const tok = estimateTokens(text);
-        const cur = dailyMap[date] || (dailyMap[date] = { input: 0, output: 0 });
-        const isUser = e.kind === 'message' || e.author === 'user' || e.role === 'user';
-        if (isUser) cur.input += tok;
-        else cur.output += tok;
+        const d = cache.daily[date] || (cache.daily[date] = { input: 0, output: 0 });
+
+        if (e.kind === 'message') {
+          const text = e.content || e.message?.content || e.richText || '';
+          const tok = estimateTokens(text);
+          if (e.role === 'user') {
+            if (e.requestId && cache.seenReqs[e.requestId]) continue;
+            if (e.requestId) cache.seenReqs[e.requestId] = 1;
+            d.input += tok;
+          } else if (e.role === 'assistant') {
+            d.output += tok;
+          }
+        } else if (e.kind === 'send-message') {
+          if (e.requestId && cache.seenReqs[e.requestId]) continue;
+          if (e.requestId) cache.seenReqs[e.requestId] = 1;
+          const text = e.message?.content || e.content || e.richText || '';
+          const tok = estimateTokens(text);
+          d.input += tok;
+        }
       }
 
-      cache.files[fullPath] = {
-        mtimeMs: st.mtimeMs,
-        size: st.size,
-        daily: dailyMap,
-      };
+      cache.files[fullPath] = { mtimeMs: st.mtimeMs, size: st.size };
     } catch {}
   }
 
-  // 重构 rows
-  const newRows = {};
-  for (const [p, fileRec] of Object.entries(cache.files)) {
-    if (!fs.existsSync(p)) {
-      delete cache.files[p];
-      continue;
-    }
-    for (const [date, val] of Object.entries(fileRec.daily || {})) {
-      if (date < keepAfter) continue;
-      const key = `${date}|grok-bot`;
-      const row = newRows[key] || (newRows[key] = {
-        date, model: 'grok-bot', cwd: null, input: 0, output: 0, cacheRead: 0, cacheWrite: 0,
-      });
-      row.input += val.input;
-      row.output += val.output;
-    }
+  if (changed) {
+    saveCache(cache);
   }
-  cache.rows = newRows;
 
-  try {
-    fs.mkdirSync(path.dirname(CACHE_FILE), { recursive: true });
-    fs.writeFileSync(CACHE_FILE, JSON.stringify(cache));
-  } catch {}
-
-  return Object.values(cache.rows);
+  return buildRows(cache.daily);
 }
 
 export function createGrokBotAdapter() {
@@ -270,6 +322,8 @@ export function createGrokBotAdapter() {
 
   return {
     id: 'grokbot', name: 'Grok Bot', color: '#fb7185',
+    tokenTag: '会话文本估算（仅本地可见部分）',
+    costData: false, // 助手回复不全量落盘，不进费用估值与订阅回报，避免误导
     warm() { gate({}).catch(() => {}); rowsCache.warm(); },
     async quota() {
       const hasLocal = fs.existsSync(GROKBOT_DATA_DIR);
@@ -283,6 +337,9 @@ export function createGrokBotAdapter() {
         const r = await gate({});
         lastLatency = Date.now() - t0; lastOk = Date.now();
         const base = { kind: 'windows', windows: r.data.windows, source: r.data.source, note: r.data.note };
+        if (r.data.isStale) {
+          return { ...base, status: 'stale', note: r.data.staleNote || base.note };
+        }
         if (r.stale) {
           const mins = Math.max(1, Math.round(r.ageMs / 60000));
           return { ...base, status: 'stale', note: `数据为 ${mins} 分钟前 · 查询失败重试中` };

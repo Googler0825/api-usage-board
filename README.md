@@ -80,7 +80,7 @@ nohup "/path/to/api-usage-board/serve.command" >/dev/null 2>&1 &
 - Antigravity **配额**仍靠机会主义采集，凭证位置未定位，只有 agy 运行时才能查到，不跑则显示"未运行"；**Token 用量**已从本地会话库解析，跟 agy 是否运行无关（社区 PR #1 贡献）
 - Grok Build（Grok CLI / SuperGrok）的 token 序列是上下文快照近似值，不是精确计量
 - Cursor 没有本地干净日志：在 Token 用量 tab 的 Coding Agent 面板里占位（标「仅配额 · 见 Dashboard」），不进趋势/费用
-- Grok Bot（Sand 架构）：**配额**支持优先通过 Cursor 凭证接口请求，并自动回退读取桌面客户端本地切片（`weekly-usage.cache`）；**Token 用量**已支持通过本地会话切片（`transcript.replicas`）按消息文本与时间戳进行近似估算（字符级折算）
+- Grok Bot（Sand 架构）：**配额**优先通过 Cursor 凭证接口请求，网络异常或凭证过期时自动回退读取桌面客户端本地切片（`weekly-usage.cache`，过期标记 stale 并提示离线）；**Token 用量**支持通过本地会话切片（`transcript.replicas`）进行会话文本估算（去重累加，仅本地可见部分，暂不进费用估值与订阅回报）
 - Gemini API 没有官方用量查询接口，只能读客户端留在本地的会话记录：目前支持 **Gemini CLI**（API key 模式）和 **OpenCode**（Google provider）。自己写脚本直接调 API 的用量采集不到；费用按官方刊例价估算。两个数据源的格式依据官方源码实现，尚未经真实用户数据验证，欢迎反馈
 
 ## 安全
